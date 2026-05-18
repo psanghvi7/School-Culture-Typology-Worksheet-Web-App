@@ -58,54 +58,52 @@ RESULTS_FILE = "anonymous_culture_results.csv"
 user_scores = {col: 0 for col in typologies.keys()}
 all_rows_valid = True
 
-with st.form("culture_survey"):
-    for category, statements in worksheet_data.items():
-        st.subheader(category)
-        st.markdown("---")
-        
-        row_total = 0
-        row_inputs = {}
-        
-        # Display statements vertically for better readability
-        for col_letter, text in statements.items():
-            # Use columns to put the number input next to the text
-            text_col, input_col = st.columns([4, 1])
-            with text_col:
-                st.write(text)
-            with input_col:
-                val = st.number_input(f"Points", min_value=0, max_value=10, value=0, key=f"{category}_{col_letter}", label_visibility="collapsed")
-                row_inputs[col_letter] = val
-                row_total += val
-                
-        st.write(f"**Current Total for {category}: {row_total}/10**")
-        
-        # Validation check
-        if row_total != 10:
-            st.error(f"⚠️ You must distribute exactly 10 points for {category}.")
-            all_rows_valid = False
-        else:
-            # If valid, add to the user's running column totals
-            for col_letter, val in row_inputs.items():
-                user_scores[col_letter] += val
-                
-        st.markdown("<br><br>", unsafe_allow_html=True) # Spacing between major categories
-
-    submitted = st.form_submit_button("Submit Anonymous Survey", type="primary")
-
-    if submitted:
-        if all_rows_valid:
-            # Map the letter columns to their typology names for the final output
-            final_results = {typologies[letter]: score for letter, score in user_scores.items()}
-            final_results["Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+for category, statements in worksheet_data.items():
+    st.subheader(category)
+    st.markdown("---")
+    
+    row_total = 0
+    row_inputs = {}
+    
+    # Display statements vertically for better readability
+    for col_letter, text in statements.items():
+        # Use columns to put the number input next to the text
+        text_col, input_col = st.columns([4, 1])
+        with text_col:
+            st.write(text)
+        with input_col:
+            val = st.number_input(f"Points", min_value=0, max_value=10, value=0, key=f"{category}_{col_letter}", label_visibility="collapsed")
+            row_inputs[col_letter] = val
+            row_total += val
             
-            # Save to CSV
-            results_df = pd.DataFrame([final_results])
-            if not os.path.isfile(RESULTS_FILE):
-                results_df.to_csv(RESULTS_FILE, index=False)
-            else:
-                results_df.to_csv(RESULTS_FILE, mode='a', header=False, index=False)
-                
-            st.success("Thank you! Your response has been securely recorded.")
-            st.balloons() # A little celebration animation upon success
+    # Validation check and dynamic total display
+    if row_total != 10:
+        st.markdown(f"**<span style='color:red'>Current Total for {category}: {row_total}/10</span>** (You must distribute exactly 10 points)", unsafe_allow_html=True)
+        all_rows_valid = False
+    else:
+        st.markdown(f"**<span style='color:green'>Current Total for {category}: 10/10</span>** ✅", unsafe_allow_html=True)
+        # If valid, add to the user's running column totals
+        for col_letter, val in row_inputs.items():
+            user_scores[col_letter] += val
+            
+    st.markdown("<br><br>", unsafe_allow_html=True) # Spacing between major categories
+
+submitted = st.button("Submit Anonymous Survey", type="primary")
+
+if submitted:
+    if all_rows_valid:
+        # Map the letter columns to their typology names for the final output
+        final_results = {typologies[letter]: score for letter, score in user_scores.items()}
+        final_results["Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Save to CSV
+        results_df = pd.DataFrame([final_results])
+        if not os.path.isfile(RESULTS_FILE):
+            results_df.to_csv(RESULTS_FILE, index=False)
         else:
-            st.error("Submission failed. Please scroll up and fix the categories highlighted in red.")
+            results_df.to_csv(RESULTS_FILE, mode='a', header=False, index=False)
+            
+        st.success("Thank you! Your response has been securely recorded.")
+        st.balloons() # A little celebration animation upon success
+    else:
+        st.error("Submission failed. Please scroll up and fix the categories that do not sum to exactly 10.")
