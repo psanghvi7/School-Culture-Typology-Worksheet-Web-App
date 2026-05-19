@@ -1,14 +1,15 @@
+# pyrefly: ignore [missing-import]
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 import plotly.express as px
 
 st.set_page_config(page_title="School Culture Typology Survey", layout="wide")
 
 RESULTS_FILE = "anonymous_culture_results.csv"
 SCHOOLS_FILE = "registered_schools.txt"
-ADMIN_PASSWORD = "1234"
 
 # Typology Mapping (for backend calculation)
 typologies = {
@@ -152,8 +153,17 @@ if "school_code" not in st.session_state:
 
 # --- Render Functions ---
 def render_login():
-    st.markdown("<h1 style='text-align: center;'>Welcome</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>Please enter the 4-digit code provided by your school to take the survey.</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>Welcome!</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Please enter your assigned 4-digit code below to ensure your responses are correctly stored.</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='text-align: center; font-size: 0.9em;'>"
+        "<strong>Timing & Privacy:</strong> This survey consists of 12 categories and typically takes about 5 to 10 minutes to complete. "
+        "It is being administered solely for graduate academic research in transformational educational leadership. "
+        "This platform is completely anonymous. It does not track login credentials, IP addresses, or browser data; "
+        "the only information securely collected is the point distributions you explicitly submit."
+        "</p>", 
+        unsafe_allow_html=True
+    )
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -165,14 +175,24 @@ def render_login():
             if submitted:
                 if code == "0000":
                     st.session_state.page = "admin"
-                st.rerun()
-            elif code in load_schools():
-                st.session_state.school_code = code
-                st.session_state.school_name = load_schools()[code]
-                st.session_state.page = "survey"
-                st.rerun()
-            else:
-                st.error("This number is not correct. Please double-check with the person who sent you here to see what the four-digit code is that they would like you to use.")
+                    st.rerun()
+                elif code in load_schools():
+                    st.session_state.school_code = code
+                    st.session_state.school_name = load_schools()[code]
+                    st.session_state.page = "survey"
+                    st.rerun()
+                else:
+                    st.error("This number is not correct. Please double-check with the person who sent you here to see what the four-digit code is that they would like you to use.")
+
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='text-align: center; font-size: 0.85em; color: #666;'>"
+        "The text and structure of this survey are the intellectual property of Steve Gruenert and Jerry Valentine (MLLC, 2000; rev. 2006). "
+        "This digital application was built independently to facilitate the anonymous administration and data collection of their worksheet for academic analysis. "
+        "The developer of this application is not affiliated with the original authors."
+        "</p>", 
+        unsafe_allow_html=True
+    )
 
 def render_survey():
     school_name = st.session_state.get("school_name", "")
@@ -252,6 +272,7 @@ def render_survey():
             st.error("Submission failed. Please scroll up and fix the categories that do not sum to exactly 10.")
 
 def render_admin():
+    ADMIN_PASSWORD = "1234"
     col1, col2 = st.columns([8, 1])
     with col1:
         st.title("Admin Dashboard")
