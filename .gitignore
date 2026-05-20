@@ -1,5 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
-anonymous_culture_results.csv
 .DS_Store
+
+# Local data files
+*.csv
+*.csv.bak
+registered_schools.txt
