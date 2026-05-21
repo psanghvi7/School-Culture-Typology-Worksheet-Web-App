@@ -8,8 +8,17 @@ import plotly.express as px
 
 st.set_page_config(page_title="School Culture Typology Survey", layout="wide")
 
+# Center align tabs using custom CSS injection
+st.markdown("""
+    <style>
+    [data-baseweb="tab-list"] {
+        justify-content: center;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 RESULTS_FILE = "anonymous_culture_results.csv"
-SCHOOLS_FILE = "registered_schools.txt"
+SCHOOLS_FILE = "registered_schools.csv"
 
 # Typology Mapping (for backend calculation)
 typologies = {
@@ -122,28 +131,65 @@ worksheet_data = {
 }
 
 # --- Helper Functions ---
-def load_schools():
-    schools = {}
+def load_schools_raw():
     if not os.path.exists(SCHOOLS_FILE):
-        return schools
-    with open(SCHOOLS_FILE, "r") as f:
-        for line in f:
-            parts = line.strip().split(",", 1)
-            if len(parts) == 2:
-                schools[parts[0]] = parts[1]
-            elif len(parts) == 1 and parts[0]:
-                schools[parts[0]] = ""
-    return schools
+        return pd.DataFrame(columns=["school_code", "school_name", "password"])
+    try:
+        # Explicitly specify string type for school_code and password to preserve leading zeros
+        return pd.read_csv(SCHOOLS_FILE, dtype={"school_code": str, "password": str})
+    except Exception:
+        return pd.DataFrame(columns=["school_code", "school_name", "password"])
 
-def save_school(code, name=""):
-    with open(SCHOOLS_FILE, "a") as f:
-        f.write(f"{code},{name}\n")
+def load_schools():
+    # Returns {school_code: school_name} for backward compatibility
+    df = load_schools_raw()
+    return dict(zip(df["school_code"].astype(str), df["school_name"].fillna("")))
+
+def load_school_passwords():
+    # Returns {school_code: password}
+    df = load_schools_raw()
+    return dict(zip(df["school_code"].astype(str), df["password"].fillna("")))
+
+def save_school(code, name, password):
+    df = load_schools_raw()
+    new_school = pd.DataFrame([{"school_code": str(code), "school_name": name, "password": str(password)}])
+    df = pd.concat([df, new_school], ignore_index=True)
+    df.to_csv(SCHOOLS_FILE, index=False)
+
+def clear_school_data(school_code):
+    if os.path.exists(RESULTS_FILE):
+        try:
+            df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+            df["School Code"] = df["School Code"].astype(str)
+            df_filtered = df[df["School Code"] != str(school_code)]
+            df_filtered.to_csv(RESULTS_FILE, index=False)
+            return True
+        except Exception:
+            return False
+    return False
+
+def delete_school_registration(school_code):
+    try:
+        df = load_schools_raw()
+        df = df[df["school_code"] != str(school_code)]
+        df.to_csv(SCHOOLS_FILE, index=False)
+        return True
+    except Exception:
+        return False
 
 def clear_all_data():
     if os.path.exists(RESULTS_FILE):
         os.remove(RESULTS_FILE)
     if os.path.exists(SCHOOLS_FILE):
         os.remove(SCHOOLS_FILE)
+
+def verify_admin_password(password_input):
+    import hashlib
+    env_pass = os.environ.get("SUPER_ADMIN_PASSWORD")
+    if env_pass:
+        return password_input == env_pass
+    target_hash = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+    return hashlib.sha256(password_input.encode()).hexdigest() == target_hash
 
 # --- Session State Initialization ---
 if "page" not in st.session_state:
@@ -154,37 +200,106 @@ if "school_code" not in st.session_state:
 # --- Render Functions ---
 def render_login():
     st.markdown("<h1 style='text-align: center;'>Welcome!</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>Please enter your assigned 4-digit code below to ensure your responses are correctly stored.</p>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='text-align: center; font-size: 0.9em;'>"
-        "<strong>Timing & Privacy:</strong> This survey consists of 12 categories and typically takes about 5 to 10 minutes to complete. "
-        "It is being administered solely for graduate academic research in transformational educational leadership. "
-        "This platform is completely anonymous. It does not track login credentials, IP addresses, or browser data; "
-        "the only information securely collected is the point distributions you explicitly submit."
-        "</p>", 
-        unsafe_allow_html=True
-    )
     
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
-        # Use a form to allow 'Enter' key submission
-        with st.form("login_form"):
-            code = st.text_input("4-digit school code", max_chars=4)
-            submitted = st.form_submit_button("Enter", use_container_width=True)
-            
-            if submitted:
-                if code == "0000":
-                    st.session_state.page = "admin"
-                    st.rerun()
-                elif code in load_schools():
-                    st.session_state.school_code = code
-                    st.session_state.school_name = load_schools()[code]
-                    st.session_state.page = "survey"
-                    st.rerun()
-                else:
-                    st.error("This number is not correct. Please double-check with the person who sent you here to see what the four-digit code is that they would like you to use.")
-
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Take Survey", 
+            "View School Data", 
+            "Register School", 
+            "System Settings"
+        ])
+        
+        with tab1:
+            st.markdown("<p style='margin-top: 1rem;'>Enter the 4-digit code provided by your school to begin the survey.</p>", unsafe_allow_html=True)
+            with st.form("take_survey_form"):
+                st.markdown(
+                    """
+                    <div style="
+                        background-color: var(--secondary-background-color);
+                        border: 1px solid rgba(128, 128, 128, 0.15);
+                        border-radius: 8px;
+                        padding: 14px 18px;
+                        margin-bottom: 20px;
+                    ">
+                        <div style="font-size: 0.88em; color: var(--text-color); line-height: 1.4; margin-bottom: 12px;">
+                            <strong>Duration:</strong> 12 categories, taking approximately 5 to 10 minutes to complete.
+                        </div>
+                        <div style="font-size: 0.88em; color: var(--text-color); line-height: 1.4;">
+                            <strong>Privacy & Anonymity:</strong> Administered solely for graduate academic research in transformational educational leadership. This platform does not track logins, IP addresses, or browser data; only the points you submit are securely collected.
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                code = st.text_input("4-digit school code", max_chars=4, key="survey_code_input")
+                submitted = st.form_submit_button("Start Survey", use_container_width=True)
+                
+                if submitted:
+                    if code == "0000":
+                        st.warning("Please use the 'System Settings' tab to log in.")
+                    elif code in load_schools():
+                        st.session_state.school_code = code
+                        st.session_state.school_name = load_schools()[code]
+                        st.session_state.page = "survey"
+                        st.rerun()
+                    else:
+                        st.error("This number is not correct. Please double-check with the person who sent you here to see what the four-digit code is that they would like you to use.")
+        
+        with tab2:
+            st.markdown("<p style='margin-top: 1rem;'>Log in to view your school's survey responses and data analysis.</p>", unsafe_allow_html=True)
+            with st.form("view_data_form"):
+                code = st.text_input("4-digit school code", max_chars=4, key="dashboard_code_input")
+                password = st.text_input("Password", type="password", key="dashboard_password_input")
+                submitted = st.form_submit_button("View Data Dashboard", use_container_width=True)
+                
+                if submitted:
+                    school_passwords = load_school_passwords()
+                    if code in load_schools() and password == school_passwords.get(code, ""):
+                        st.session_state.dashboard_school_code = code
+                        st.session_state.school_name = load_schools()[code]
+                        st.session_state.page = "school_dashboard"
+                        st.rerun()
+                    else:
+                        st.error("Invalid school code or password. Please try again.")
+                        
+        with tab3:
+            st.markdown("<p style='margin-top: 1rem;'>Register a new school code to distribute to your staff and collect survey responses.</p>", unsafe_allow_html=True)
+            with st.form("register_school_form"):
+                new_code = st.text_input("Create 4-digit school code", max_chars=4, key="register_code_input")
+                school_name = st.text_input("School Name (Optional)", key="register_name_input")
+                new_password = st.text_input("Create Dashboard Password", type="password", key="register_password_input")
+                submitted = st.form_submit_button("Register School", use_container_width=True)
+                
+                if submitted:
+                    if len(new_code) == 4 and new_code.isdigit():
+                        if new_code == "0000":
+                            st.error("Code '0000' is reserved for system administration. Please choose another code.")
+                        elif new_code not in load_schools():
+                            if new_password.strip():
+                                save_school(new_code, school_name, new_password)
+                                st.success(f"School {new_code} registered successfully! You can now share this code with your staff, and log in to the 'View School Data' tab using your password.")
+                            else:
+                                st.error("Please create a password for reviewing your data.")
+                        else:
+                            st.warning("This school code is already registered. Please choose another 4-digit code.")
+                    else:
+                        st.error("Please enter a valid 4-digit numeric code.")
+                        
+        with tab4:
+            st.markdown("<p style='margin-top: 1rem;'>System Settings Portal</p>", unsafe_allow_html=True)
+            with st.form("super_admin_form"):
+                admin_pass = st.text_input("Enter Admin Password", type="password", key="admin_password_input")
+                submitted = st.form_submit_button("Log In to System Settings", use_container_width=True)
+                
+                if submitted:
+                    if verify_admin_password(admin_pass):
+                        st.session_state.page = "admin"
+                        st.rerun()
+                    else:
+                        st.error("Incorrect admin password.")
+ 
+    st.markdown("<br><hr>", unsafe_allow_html=True)
     st.markdown(
         "<p style='text-align: center; font-size: 0.85em; color: #666;'>"
         "The text and structure of this survey are the intellectual property of Steve Gruenert and Jerry Valentine (MLLC, 2000; rev. 2006). "
@@ -271,108 +386,214 @@ def render_survey():
         else:
             st.error("Submission failed. Please scroll up and fix the categories that do not sum to exactly 10.")
 
-def render_admin():
-    ADMIN_PASSWORD = "1234"
+def render_school_dashboard():
+    school_code = st.session_state.get("dashboard_school_code", "")
+    school_name = st.session_state.get("school_name", "")
+    
     col1, col2 = st.columns([8, 1])
     with col1:
-        st.title("Admin Dashboard")
+        display_title = f"Data Dashboard: {school_name} ({school_code})" if school_name else f"Data Dashboard: School {school_code}"
+        st.title(display_title)
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Logout", key="dashboard_logout", use_container_width=True):
+            st.session_state.page = "login"
+            st.session_state.dashboard_school_code = ""
+            st.session_state.school_name = ""
+            st.rerun()
+            
+    st.header("School Survey Results")
+    
+    if os.path.exists(RESULTS_FILE):
+        try:
+            df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+            df["School Code"] = df["School Code"].astype(str)
+            
+            school_df = df[df["School Code"] == str(school_code)]
+            
+            if not school_df.empty:
+                # Calculate averages
+                typology_names = list(typologies.values())
+                existing_cols = [col for col in typology_names if col in school_df.columns]
+                
+                if existing_cols:
+                    avg_scores = school_df[existing_cols].mean().reset_index()
+                    avg_scores.columns = ["Typology", "Average Score"]
+                    
+                    st.markdown("<h3 style='text-align: center;'>Average Typology Distribution</h3>", unsafe_allow_html=True)
+                    fig = px.pie(avg_scores, values="Average Score", names="Typology")
+                    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Download CSV for this school
+                    csv = school_df.to_csv(index=False)
+                    col_dl1, col_dl2 = st.columns([4, 1])
+                    with col_dl2:
+                        st.download_button("Download CSV for this school", csv, f"school_{school_code}_results.csv", "text/csv", use_container_width=True)
+            else:
+                st.info("No survey responses recorded for this school yet.")
+        except Exception as e:
+            st.error("Error reading the results file. Please contact the administrator.")
+    else:
+        st.info("No survey responses recorded for this school yet.")
+        
+    st.markdown("---")
+    st.markdown("<h2 style='text-align: center; color: red;'>Danger Zone</h2>", unsafe_allow_html=True)
+    
+    col_dmg1, col_dmg2 = st.columns([1, 1])
+    with col_dmg1:
+        st.markdown("<h3>Clear School Data</h3>", unsafe_allow_html=True)
+        st.write("This will permanently delete all survey submissions for this school. This action cannot be undone.")
+    with col_dmg2:
+        with st.form("clear_school_form"):
+            password_input = st.text_input("Enter School Dashboard Password to Confirm", type="password")
+            confirm = st.checkbox("I confirm that I want to permanently delete all survey data for this school.")
+            submitted_clear = st.form_submit_button("Clear All School Data", type="primary")
+            
+            if submitted_clear:
+                school_passwords = load_school_passwords()
+                actual_password = school_passwords.get(school_code, "")
+                
+                if password_input == actual_password:
+                    if confirm:
+                        if clear_school_data(school_code):
+                            st.success("School data cleared successfully!")
+                            st.rerun()
+                        else:
+                            st.warning("No data was found to clear, or an error occurred.")
+                    else:
+                        st.error("Please check the confirmation box.")
+                else:
+                    st.error("Incorrect password.")
+
+def render_admin():
+    col1, col2 = st.columns([8, 1])
+    with col1:
+        st.title("System Settings Dashboard")
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Logout", key="admin_logout", use_container_width=True):
             st.session_state.page = "login"
             st.rerun()
-    
-    st.header("School Results")
-    
-    if os.path.exists(RESULTS_FILE):
-        try:
-            df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
             
-            if "School Code" in df.columns and not df.empty:
-                # Clean up the column for display
-                df["School Code"] = df["School Code"].astype(str)
-                schools = df["School Code"].unique()
-                
-                selected_school = st.selectbox("Select a School Code", schools)
-                
-                if selected_school:
-                    school_df = df[df["School Code"] == selected_school]
-                    
-                    # Calculate averages
-                    typology_names = list(typologies.values())
-                    # Only average columns that exist
-                    existing_cols = [col for col in typology_names if col in school_df.columns]
-                    
-                    if existing_cols:
-                        avg_scores = school_df[existing_cols].mean().reset_index()
-                        avg_scores.columns = ["Typology", "Average Score"]
-                        
-                        school_name_lookup = load_schools().get(selected_school, "")
-                        display_title = f"Average Typology Distribution for {school_name_lookup} ({selected_school})" if school_name_lookup else f"Average Typology Distribution for School {selected_school}"
-                        
-                        st.markdown(f"<h3 style='text-align: center;'>{display_title}</h3>", unsafe_allow_html=True)
-                        fig = px.pie(avg_scores, values="Average Score", names="Typology")
-                        fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        csv = school_df.to_csv(index=False)
-                        col_dl1, col_dl2 = st.columns([4, 1])
-                        with col_dl2:
-                            st.download_button("Download CSV for this school", csv, f"school_{selected_school}_results.csv", "text/csv")
-            else:
-                st.info("The results file doesn't have School Code data yet.")
-        except Exception as e:
-            st.error("Error reading the results file. This usually happens if old survey data is mixed with the new format. Please use the 'Clear All Data' button below to reset.")
-    else:
-        st.info("No survey data available yet.")
+    tab_data, tab_control = st.tabs(["School Data & Passwords", "System Administration"])
+    
+    with tab_data:
+        col_list, col_chart = st.columns([1, 1])
         
-    st.markdown("---")
-    st.markdown("<h2 style='text-align: center;'>Admin Controls</h2>", unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<h3 style='text-align: center;'>Register a School</h3>", unsafe_allow_html=True)
-        with st.form("register_form"):
-            new_code = st.text_input("New 4-digit code", max_chars=4)
-            school_name = st.text_input("School Name (Optional)")
-            reg_password = st.text_input("Admin Password", type="password")
-            submitted_reg = st.form_submit_button("Register School")
-            
-            if submitted_reg:
-                if reg_password == ADMIN_PASSWORD:
-                    if len(new_code) == 4 and new_code.isdigit():
-                        if new_code not in load_schools():
-                            save_school(new_code, school_name)
-                            st.success(f"School code {new_code} registered successfully!")
-                        else:
-                            st.warning("This code is already registered.")
-                    else:
-                        st.error("Please enter a valid 4-digit numeric code.")
-                else:
-                    st.error("Incorrect password.")
+        with col_list:
+            st.subheader("Registered Schools & Passwords")
+            df_schools = load_schools_raw()
+            if not df_schools.empty:
+                # Rename columns for friendly display
+                df_display = df_schools.rename(columns={
+                    "school_code": "School Code",
+                    "school_name": "School Name",
+                    "password": "Password"
+                })
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+            else:
+                st.info("No schools registered yet.")
+                
+        with col_chart:
+            st.subheader("View School Data")
+            if os.path.exists(RESULTS_FILE):
+                try:
+                    df_results = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+                    df_results["School Code"] = df_results["School Code"].astype(str)
                     
-    with col2:
-        st.markdown("<h3 style='text-align: center;'>Clear All Data</h3>", unsafe_allow_html=True)
-        st.warning("This will permanently delete all survey results and registered school codes.")
-        with st.form("clear_form"):
-            clear_password = st.text_input("Admin Password", type="password")
-            confirm = st.checkbox("I confirm I want to delete all data")
-            submitted_clear = st.form_submit_button("Clear Data", type="primary")
-            
-            if submitted_clear:
-                if clear_password == ADMIN_PASSWORD:
-                    if confirm:
-                        clear_all_data()
-                        st.success("All data has been cleared successfully.")
+                    if not df_results.empty:
+                        schools_with_data = df_results["School Code"].unique()
+                        selected_school = st.selectbox("Select School Code to View", schools_with_data)
+                        
+                        if selected_school:
+                            school_df = df_results[df_results["School Code"] == selected_school]
+                            
+                            # Calculate averages
+                            typology_names = list(typologies.values())
+                            existing_cols = [col for col in typology_names if col in school_df.columns]
+                            
+                            if existing_cols:
+                                avg_scores = school_df[existing_cols].mean().reset_index()
+                                avg_scores.columns = ["Typology", "Average Score"]
+                                
+                                school_name_lookup = load_schools().get(selected_school, "")
+                                display_title = f"Average Typology Distribution for {school_name_lookup} ({selected_school})" if school_name_lookup else f"Average Typology Distribution for School {selected_school}"
+                                
+                                st.markdown(f"<h4 style='text-align: center;'>{display_title}</h4>", unsafe_allow_html=True)
+                                fig = px.pie(avg_scores, values="Average Score", names="Typology")
+                                fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                csv = school_df.to_csv(index=False)
+                                st.download_button("Download CSV for this school", csv, f"school_{selected_school}_results.csv", "text/csv", use_container_width=True)
                     else:
-                        st.error("Please check the confirmation box.")
-                else:
-                    st.error("Incorrect password.")
+                        st.info("No survey results recorded yet.")
+                except Exception as e:
+                    st.error("Error reading survey results.")
+            else:
+                st.info("No survey results recorded yet.")
+                
+    with tab_control:
+        st.subheader("Data Management & Deletion")
+        
+        col_del_school, col_del_all = st.columns(2)
+        
+        with col_del_school:
+            st.markdown("<div style='background-color: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeeba;'><strong>Delete Specific School</strong><br>Remove a specific school's survey responses and/or its registration record.</div>", unsafe_allow_html=True)
+            
+            # List all registered schools for deletion
+            schools_list = list(load_schools().keys())
+            
+            with st.form("delete_school_form"):
+                school_to_delete = st.selectbox("Select School Code", schools_list if schools_list else ["No schools registered"])
+                delete_reg = st.checkbox("Also delete school registration (removes password & code)")
+                pass_confirm = st.text_input("Enter Admin Password", type="password", key="del_school_admin_pass")
+                confirm_check = st.checkbox("I confirm I want to permanently delete this data.")
+                submit_del_school = st.form_submit_button("Delete School Data", type="primary")
+                
+                if submit_del_school:
+                    if school_to_delete == "No schools registered":
+                        st.error("No schools registered to delete.")
+                    elif verify_admin_password(pass_confirm):
+                        if confirm_check:
+                            clear_school_data(school_to_delete)
+                            if delete_reg:
+                                delete_school_registration(school_to_delete)
+                                st.success(f"School {school_to_delete} survey data and registration record deleted successfully.")
+                            else:
+                                st.success(f"School {school_to_delete} survey data cleared successfully.")
+                            st.rerun()
+                        else:
+                            st.error("Please check the confirmation box.")
+                    else:
+                        st.error("Incorrect admin password.")
+                        
+        with col_del_all:
+            st.markdown("<div style='background-color: #f8d7da; padding: 15px; border-radius: 5px; border: 1px solid #f5c6cb;'><strong>Reset System (Delete All)</strong><br>Permanently delete all registered schools, passwords, and survey results.</div>", unsafe_allow_html=True)
+            
+            with st.form("clear_all_form"):
+                pass_confirm_all = st.text_input("Enter Admin Password", type="password", key="clear_all_admin_pass")
+                confirm_check_all = st.checkbox("I confirm I want to wipe all system data. THIS CANNOT BE UNDONE.")
+                submit_clear_all = st.form_submit_button("Wipe All Data", type="primary")
+                
+                if submit_clear_all:
+                    if verify_admin_password(pass_confirm_all):
+                        if confirm_check_all:
+                            clear_all_data()
+                            st.success("All system data has been wiped successfully.")
+                            st.rerun()
+                        else:
+                            st.error("Please check the confirmation box.")
+                    else:
+                        st.error("Incorrect admin password.")
 
 # --- Router ---
 if st.session_state.page == "login":
     render_login()
 elif st.session_state.page == "survey":
     render_survey()
+elif st.session_state.page == "school_dashboard":
+    render_school_dashboard()
 elif st.session_state.page == "admin":
     render_admin()
