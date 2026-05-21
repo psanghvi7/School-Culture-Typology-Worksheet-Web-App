@@ -223,7 +223,7 @@ def render_login():
                         margin-bottom: 20px;
                     ">
                         <div style="font-size: 0.88em; color: var(--text-color); line-height: 1.4; margin-bottom: 12px;">
-                            <strong>Duration:</strong> 12 categories, taking approximately 5 to 10 minutes to complete.
+                            <strong>Duration:</strong> The entire survey consists of 12 categories and takes approximately 5 to 10 minutes to complete.
                         </div>
                         <div style="font-size: 0.88em; color: var(--text-color); line-height: 1.4;">
                             <strong>Privacy & Anonymity:</strong> Administered solely for graduate academic research in transformational educational leadership. This platform does not track logins, IP addresses, or browser data; only the points you submit are securely collected.
