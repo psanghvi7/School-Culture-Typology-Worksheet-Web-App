@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import requests
 from datetime import datetime
 # pyrefly: ignore [missing-import]
 import plotly.express as px
@@ -131,32 +132,167 @@ worksheet_data = {
 }
 
 # --- Helper Functions ---
+def get_apps_script_url():
+    try:
+        return st.secrets.get("APPS_SCRIPT_URL")
+    except Exception:
+        return os.environ.get("APPS_SCRIPT_URL")
+
+def get_api_key():
+    try:
+        return st.secrets.get("APPS_SCRIPT_API_KEY", "")
+    except Exception:
+        return os.environ.get("APPS_SCRIPT_API_KEY", "")
+
 def load_schools_raw():
+    url = get_apps_script_url()
+    if url:
+        try:
+            r = requests.get(f"{url}?action=get_schools&api_key={get_api_key()}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict) and "error" in data:
+                    st.error(f"Google Sheets Error: {data['error']}")
+                    return pd.DataFrame(columns=["school_code", "school_name", "password"])
+                df = pd.DataFrame(data)
+                if df.empty:
+                    return pd.DataFrame(columns=["school_code", "school_name", "password"])
+                df["school_code"] = df["school_code"].astype(str)
+                df["password"] = df["password"].astype(str)
+                return df
+        except Exception as e:
+            st.error(f"Error loading schools from Google Sheets: {e}")
+            return pd.DataFrame(columns=["school_code", "school_name", "password"])
+
     if not os.path.exists(SCHOOLS_FILE):
         return pd.DataFrame(columns=["school_code", "school_name", "password"])
     try:
-        # Explicitly specify string type for school_code and password to preserve leading zeros
         return pd.read_csv(SCHOOLS_FILE, dtype={"school_code": str, "password": str})
     except Exception:
         return pd.DataFrame(columns=["school_code", "school_name", "password"])
 
 def load_schools():
-    # Returns {school_code: school_name} for backward compatibility
     df = load_schools_raw()
     return dict(zip(df["school_code"].astype(str), df["school_name"].fillna("")))
 
 def load_school_passwords():
-    # Returns {school_code: password}
     df = load_schools_raw()
     return dict(zip(df["school_code"].astype(str), df["password"].fillna("")))
 
 def save_school(code, name, password):
+    url = get_apps_script_url()
+    if url:
+        payload = {
+            "action": "save_school",
+            "api_key": get_api_key(),
+            "school_code": str(code),
+            "school_name": name,
+            "password": str(password)
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                return True
+        except Exception as e:
+            st.error(f"Error saving school to Google Sheets: {e}")
+            return False
+
     df = load_schools_raw()
     new_school = pd.DataFrame([{"school_code": str(code), "school_name": name, "password": str(password)}])
     df = pd.concat([df, new_school], ignore_index=True)
     df.to_csv(SCHOOLS_FILE, index=False)
+    return True
+
+def load_results_raw():
+    url = get_apps_script_url()
+    if url:
+        try:
+            r = requests.get(f"{url}?action=get_results&api_key={get_api_key()}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict) and "error" in data:
+                    st.error(f"Google Sheets Error: {data['error']}")
+                    return pd.DataFrame(columns=[
+                        "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
+                        "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
+                    ])
+                df = pd.DataFrame(data)
+                if df.empty:
+                    return pd.DataFrame(columns=[
+                        "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
+                        "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
+                    ])
+                df["School Code"] = df["School Code"].astype(str)
+                return df
+        except Exception as e:
+            st.error(f"Error loading results from Google Sheets: {e}")
+            return pd.DataFrame(columns=[
+                "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
+                "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
+            ])
+
+    if not os.path.exists(RESULTS_FILE):
+        return pd.DataFrame(columns=[
+            "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
+            "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
+        ])
+    try:
+        return pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+    except Exception:
+        return pd.DataFrame(columns=[
+            "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
+            "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
+        ])
+
+def save_result(final_results):
+    url = get_apps_script_url()
+    if url:
+        payload = {
+            "action": "save_result",
+            "api_key": get_api_key(),
+            "Timestamp": final_results["Timestamp"],
+            "School Code": final_results["School Code"],
+            "Toxic": int(final_results.get("Toxic", 0)),
+            "Fragmented": int(final_results.get("Fragmented", 0)),
+            "Balkanized": int(final_results.get("Balkanized", 0)),
+            "Contrived Collegiality": int(final_results.get("Contrived Collegiality", 0)),
+            "Comfortable Collaboration": int(final_results.get("Comfortable Collaboration", 0)),
+            "Collaborative": int(final_results.get("Collaborative", 0))
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                return True
+        except Exception as e:
+            st.error(f"Error saving result to Google Sheets: {e}")
+            return False
+
+    try:
+        results_df = pd.DataFrame([final_results])
+        if not os.path.isfile(RESULTS_FILE):
+            results_df.to_csv(RESULTS_FILE, index=False)
+        else:
+            results_df.to_csv(RESULTS_FILE, mode='a', header=False, index=False)
+        return True
+    except Exception:
+        return False
 
 def clear_school_data(school_code):
+    url = get_apps_script_url()
+    if url:
+        payload = {
+            "action": "clear_school_data",
+            "api_key": get_api_key(),
+            "school_code": str(school_code)
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                return True
+        except Exception as e:
+            st.error(f"Error clearing school data in Google Sheets: {e}")
+            return False
+
     if os.path.exists(RESULTS_FILE):
         try:
             df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
@@ -169,6 +305,21 @@ def clear_school_data(school_code):
     return False
 
 def delete_school_registration(school_code):
+    url = get_apps_script_url()
+    if url:
+        payload = {
+            "action": "delete_school_registration",
+            "api_key": get_api_key(),
+            "school_code": str(school_code)
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                return True
+        except Exception as e:
+            st.error(f"Error deleting school registration in Google Sheets: {e}")
+            return False
+
     try:
         df = load_schools_raw()
         df = df[df["school_code"] != str(school_code)]
@@ -178,10 +329,25 @@ def delete_school_registration(school_code):
         return False
 
 def clear_all_data():
+    url = get_apps_script_url()
+    if url:
+        payload = {
+            "action": "clear_all_data",
+            "api_key": get_api_key()
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                return True
+        except Exception as e:
+            st.error(f"Error clearing all data in Google Sheets: {e}")
+            return False
+
     if os.path.exists(RESULTS_FILE):
         os.remove(RESULTS_FILE)
     if os.path.exists(SCHOOLS_FILE):
         os.remove(SCHOOLS_FILE)
+    return True
 
 def verify_admin_password(password_input):
     import hashlib
@@ -374,15 +540,12 @@ def render_survey():
             final_results["Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             final_results["School Code"] = st.session_state.school_code
             
-            # Save to CSV
-            results_df = pd.DataFrame([final_results])
-            if not os.path.isfile(RESULTS_FILE):
-                results_df.to_csv(RESULTS_FILE, index=False)
+            # Save to database (Google Sheets or local CSV fallback)
+            if save_result(final_results):
+                st.success("Thank you! Your response has been securely recorded.")
+                st.balloons()
             else:
-                results_df.to_csv(RESULTS_FILE, mode='a', header=False, index=False)
-                
-            st.success("Thank you! Your response has been securely recorded.")
-            st.balloons()
+                st.error("Error saving your response. Please try again.")
         else:
             st.error("Submission failed. Please scroll up and fix the categories that do not sum to exactly 10.")
 
@@ -404,38 +567,33 @@ def render_school_dashboard():
             
     st.header("School Survey Results")
     
-    if os.path.exists(RESULTS_FILE):
-        try:
-            df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
-            df["School Code"] = df["School Code"].astype(str)
+    try:
+        df = load_results_raw()
+        school_df = df[df["School Code"] == str(school_code)] if not df.empty else pd.DataFrame()
+        
+        if not school_df.empty:
+            # Calculate averages
+            typology_names = list(typologies.values())
+            existing_cols = [col for col in typology_names if col in school_df.columns]
             
-            school_df = df[df["School Code"] == str(school_code)]
-            
-            if not school_df.empty:
-                # Calculate averages
-                typology_names = list(typologies.values())
-                existing_cols = [col for col in typology_names if col in school_df.columns]
+            if existing_cols:
+                avg_scores = school_df[existing_cols].mean().reset_index()
+                avg_scores.columns = ["Typology", "Average Score"]
                 
-                if existing_cols:
-                    avg_scores = school_df[existing_cols].mean().reset_index()
-                    avg_scores.columns = ["Typology", "Average Score"]
-                    
-                    st.markdown("<h3 style='text-align: center;'>Average Typology Distribution</h3>", unsafe_allow_html=True)
-                    fig = px.pie(avg_scores, values="Average Score", names="Typology")
-                    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Download CSV for this school
-                    csv = school_df.to_csv(index=False)
-                    col_dl1, col_dl2 = st.columns([4, 1])
-                    with col_dl2:
-                        st.download_button("Download CSV for this school", csv, f"school_{school_code}_results.csv", "text/csv", use_container_width=True)
-            else:
-                st.info("No survey responses recorded for this school yet.")
-        except Exception as e:
-            st.error("Error reading the results file. Please contact the administrator.")
-    else:
-        st.info("No survey responses recorded for this school yet.")
+                st.markdown("<h3 style='text-align: center;'>Average Typology Distribution</h3>", unsafe_allow_html=True)
+                fig = px.pie(avg_scores, values="Average Score", names="Typology")
+                fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Download CSV for this school
+                csv = school_df.to_csv(index=False)
+                col_dl1, col_dl2 = st.columns([4, 1])
+                with col_dl2:
+                    st.download_button("Download CSV for this school", csv, f"school_{school_code}_results.csv", "text/csv", use_container_width=True)
+        else:
+            st.info("No survey responses recorded for this school yet.")
+    except Exception as e:
+        st.error(f"Error reading results: {e}")
         
     st.markdown("---")
     st.markdown("<h2 style='text-align: center; color: red;'>Danger Zone</h2>", unsafe_allow_html=True)
@@ -470,6 +628,10 @@ def render_admin():
     col1, col2 = st.columns([8, 1])
     with col1:
         st.title("System Settings Dashboard")
+        if get_apps_script_url():
+            st.markdown("<p style='color: green; font-size: 0.9em; font-weight: bold; margin-top: -10px;'>🟢 Database Status: Connected to Google Sheets</p>", unsafe_allow_html=True)
+        else:
+            st.markdown("<p style='color: orange; font-size: 0.9em; font-weight: bold; margin-top: -10px;'>⚪ Database Status: Local CSV Fallback Mode (Offline)</p>", unsafe_allow_html=True)
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Logout", key="admin_logout", use_container_width=True):
@@ -497,42 +659,37 @@ def render_admin():
                 
         with col_chart:
             st.subheader("View School Data")
-            if os.path.exists(RESULTS_FILE):
-                try:
-                    df_results = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
-                    df_results["School Code"] = df_results["School Code"].astype(str)
+            try:
+                df_results = load_results_raw()
+                if not df_results.empty:
+                    schools_with_data = df_results["School Code"].unique()
+                    selected_school = st.selectbox("Select School Code to View", schools_with_data)
                     
-                    if not df_results.empty:
-                        schools_with_data = df_results["School Code"].unique()
-                        selected_school = st.selectbox("Select School Code to View", schools_with_data)
+                    if selected_school:
+                        school_df = df_results[df_results["School Code"] == selected_school]
                         
-                        if selected_school:
-                            school_df = df_results[df_results["School Code"] == selected_school]
+                        # Calculate averages
+                        typology_names = list(typologies.values())
+                        existing_cols = [col for col in typology_names if col in school_df.columns]
+                        
+                        if existing_cols:
+                            avg_scores = school_df[existing_cols].mean().reset_index()
+                            avg_scores.columns = ["Typology", "Average Score"]
                             
-                            # Calculate averages
-                            typology_names = list(typologies.values())
-                            existing_cols = [col for col in typology_names if col in school_df.columns]
+                            school_name_lookup = load_schools().get(selected_school, "")
+                            display_title = f"Average Typology Distribution for {school_name_lookup} ({selected_school})" if school_name_lookup else f"Average Typology Distribution for School {selected_school}"
                             
-                            if existing_cols:
-                                avg_scores = school_df[existing_cols].mean().reset_index()
-                                avg_scores.columns = ["Typology", "Average Score"]
-                                
-                                school_name_lookup = load_schools().get(selected_school, "")
-                                display_title = f"Average Typology Distribution for {school_name_lookup} ({selected_school})" if school_name_lookup else f"Average Typology Distribution for School {selected_school}"
-                                
-                                st.markdown(f"<h4 style='text-align: center;'>{display_title}</h4>", unsafe_allow_html=True)
-                                fig = px.pie(avg_scores, values="Average Score", names="Typology")
-                                fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
-                                st.plotly_chart(fig, use_container_width=True)
-                                
-                                csv = school_df.to_csv(index=False)
-                                st.download_button("Download CSV for this school", csv, f"school_{selected_school}_results.csv", "text/csv", use_container_width=True)
-                    else:
-                        st.info("No survey results recorded yet.")
-                except Exception as e:
-                    st.error("Error reading survey results.")
-            else:
-                st.info("No survey results recorded yet.")
+                            st.markdown(f"<h4 style='text-align: center;'>{display_title}</h4>", unsafe_allow_html=True)
+                            fig = px.pie(avg_scores, values="Average Score", names="Typology")
+                            fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            csv = school_df.to_csv(index=False)
+                            st.download_button("Download CSV for this school", csv, f"school_{selected_school}_results.csv", "text/csv", use_container_width=True)
+                else:
+                    st.info("No survey results recorded yet.")
+            except Exception as e:
+                st.error(f"Error reading survey results: {e}")
                 
     with tab_control:
         st.subheader("Data Management & Deletion")
