@@ -144,6 +144,17 @@ def get_api_key():
     except Exception:
         return os.environ.get("APPS_SCRIPT_API_KEY", "")
 
+def post_to_apps_script(url, payload):
+    # Google Apps Script redirects POST requests with a 302 Found response.
+    # Python's requests library follows redirects but converts POST to GET, losing the payload.
+    # We catch the 302 redirect manually and POST directly to the redirect Location URL.
+    r = requests.post(url, json=payload, allow_redirects=False, timeout=10)
+    if r.status_code in [301, 302, 303, 307, 308]:
+        redirect_url = r.headers.get("Location")
+        if redirect_url:
+            r = requests.post(redirect_url, json=payload, allow_redirects=True, timeout=10)
+    return r
+
 def load_schools_raw():
     url = get_apps_script_url()
     if url:
@@ -190,7 +201,7 @@ def save_school(code, name, password):
             "password": str(password)
         }
         try:
-            r = requests.post(url, json=payload, timeout=10)
+            r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
         except Exception as e:
@@ -260,7 +271,7 @@ def save_result(final_results):
             "Collaborative": int(final_results.get("Collaborative", 0))
         }
         try:
-            r = requests.post(url, json=payload, timeout=10)
+            r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
         except Exception as e:
@@ -286,7 +297,7 @@ def clear_school_data(school_code):
             "school_code": str(school_code)
         }
         try:
-            r = requests.post(url, json=payload, timeout=10)
+            r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
         except Exception as e:
@@ -313,7 +324,7 @@ def delete_school_registration(school_code):
             "school_code": str(school_code)
         }
         try:
-            r = requests.post(url, json=payload, timeout=10)
+            r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
         except Exception as e:
@@ -336,7 +347,7 @@ def clear_all_data():
             "api_key": get_api_key()
         }
         try:
-            r = requests.post(url, json=payload, timeout=10)
+            r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
         except Exception as e:
