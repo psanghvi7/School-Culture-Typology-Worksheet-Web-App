@@ -204,6 +204,9 @@ def save_school(code, name, password):
             r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
+            else:
+                st.error(f"Google Sheets returned status code {r.status_code}")
+                return False
         except Exception as e:
             st.error(f"Error saving school to Google Sheets: {e}")
             return False
@@ -274,6 +277,9 @@ def save_result(final_results):
             r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
+            else:
+                st.error(f"Google Sheets returned status code {r.status_code}")
+                return False
         except Exception as e:
             st.error(f"Error saving result to Google Sheets: {e}")
             return False
@@ -300,6 +306,9 @@ def clear_school_data(school_code):
             r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
+            else:
+                st.error(f"Google Sheets returned status code {r.status_code}")
+                return False
         except Exception as e:
             st.error(f"Error clearing school data in Google Sheets: {e}")
             return False
@@ -327,6 +336,9 @@ def delete_school_registration(school_code):
             r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
+            else:
+                st.error(f"Google Sheets returned status code {r.status_code}")
+                return False
         except Exception as e:
             st.error(f"Error deleting school registration in Google Sheets: {e}")
             return False
@@ -350,6 +362,9 @@ def clear_all_data():
             r = post_to_apps_script(url, payload)
             if r.status_code == 200:
                 return True
+            else:
+                st.error(f"Google Sheets returned status code {r.status_code}")
+                return False
         except Exception as e:
             st.error(f"Error clearing all data in Google Sheets: {e}")
             return False
