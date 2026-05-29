@@ -163,7 +163,7 @@ def load_schools_raw():
                 df = pd.DataFrame(data)
                 if df.empty:
                     return pd.DataFrame(columns=["school_code", "school_name", "password"])
-                df["school_code"] = df["school_code"].astype(str)
+                df["school_code"] = df["school_code"].astype(str).str.zfill(4)
                 df["password"] = df["password"].astype(str)
                 return df
         except Exception as e:
@@ -173,7 +173,10 @@ def load_schools_raw():
     if not os.path.exists(SCHOOLS_FILE):
         return pd.DataFrame(columns=["school_code", "school_name", "password"])
     try:
-        return pd.read_csv(SCHOOLS_FILE, dtype={"school_code": str, "password": str})
+        df = pd.read_csv(SCHOOLS_FILE, dtype={"school_code": str, "password": str})
+        if not df.empty:
+            df["school_code"] = df["school_code"].astype(str).str.zfill(4)
+        return df
     except Exception:
         return pd.DataFrame(columns=["school_code", "school_name", "password"])
 
@@ -231,7 +234,7 @@ def load_results_raw():
                         "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
                         "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
                     ])
-                df["School Code"] = df["School Code"].astype(str)
+                df["School Code"] = df["School Code"].astype(str).str.zfill(4)
                 return df
         except Exception as e:
             st.error(f"Error loading results from Google Sheets: {e}")
@@ -246,7 +249,10 @@ def load_results_raw():
             "Contrived Collegiality", "Comfortable Collaboration", "Collaborative"
         ])
     try:
-        return pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+        df = pd.read_csv(RESULTS_FILE, dtype={"School Code": str})
+        if not df.empty:
+            df["School Code"] = df["School Code"].astype(str).str.zfill(4)
+        return df
     except Exception:
         return pd.DataFrame(columns=[
             "Timestamp", "School Code", "Toxic", "Fragmented", "Balkanized", 
