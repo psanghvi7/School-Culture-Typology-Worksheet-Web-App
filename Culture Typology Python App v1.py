@@ -145,15 +145,10 @@ def get_api_key():
         return os.environ.get("APPS_SCRIPT_API_KEY", "")
 
 def post_to_apps_script(url, payload):
-    # Google Apps Script redirects POST requests with a 302 Found response.
-    # Python's requests library follows redirects but converts POST to GET, losing the payload.
-    # We catch the 302 redirect manually and POST directly to the redirect Location URL.
-    r = requests.post(url, json=payload, allow_redirects=False, timeout=10)
-    if r.status_code in [301, 302, 303, 307, 308]:
-        redirect_url = r.headers.get("Location")
-        if redirect_url:
-            r = requests.post(redirect_url, json=payload, allow_redirects=True, timeout=10)
-    return r
+    # Google Apps Script handles POST requests by storing the payload and returning a 302 redirect.
+    # The client must follow the redirect as a GET request to trigger script execution on the sandbox.
+    # Standard requests.post() handles this sequence automatically.
+    return requests.post(url, json=payload, timeout=10)
 
 def load_schools_raw():
     url = get_apps_script_url()
