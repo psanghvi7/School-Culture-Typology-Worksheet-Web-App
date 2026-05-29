@@ -469,8 +469,10 @@ def render_login():
                             st.error("Code '0000' is reserved for system administration. Please choose another code.")
                         elif new_code not in load_schools():
                             if new_password.strip():
-                                save_school(new_code, school_name, new_password)
-                                st.success(f"School {new_code} registered successfully! You can now share this code with your staff, and log in to the 'View School Data' tab using your password.")
+                                if save_school(new_code, school_name, new_password):
+                                    st.success(f"School {new_code} registered successfully! You can now share this code with your staff, and log in to the 'View School Data' tab using your password.")
+                                else:
+                                    st.error("Failed to register school code. Please check the connection error above.")
                             else:
                                 st.error("Please create a password for reviewing your data.")
                         else:
@@ -740,13 +742,18 @@ def render_admin():
                         st.error("No schools registered to delete.")
                     elif verify_admin_password(pass_confirm):
                         if confirm_check:
-                            clear_school_data(school_to_delete)
+                            success = clear_school_data(school_to_delete)
                             if delete_reg:
-                                delete_school_registration(school_to_delete)
-                                st.success(f"School {school_to_delete} survey data and registration record deleted successfully.")
+                                success = success and delete_school_registration(school_to_delete)
+                            
+                            if success:
+                                if delete_reg:
+                                    st.success(f"School {school_to_delete} survey data and registration record deleted successfully.")
+                                else:
+                                    st.success(f"School {school_to_delete} survey data cleared successfully.")
+                                st.rerun()
                             else:
-                                st.success(f"School {school_to_delete} survey data cleared successfully.")
-                            st.rerun()
+                                st.error("Failed to complete deletion in the database. Please check the error above.")
                         else:
                             st.error("Please check the confirmation box.")
                     else:
@@ -763,9 +770,11 @@ def render_admin():
                 if submit_clear_all:
                     if verify_admin_password(pass_confirm_all):
                         if confirm_check_all:
-                            clear_all_data()
-                            st.success("All system data has been wiped successfully.")
-                            st.rerun()
+                            if clear_all_data():
+                                st.success("All system data has been wiped successfully.")
+                                st.rerun()
+                            else:
+                                st.error("Failed to wipe system data. Please check the error above.")
                         else:
                             st.error("Please check the confirmation box.")
                     else:
